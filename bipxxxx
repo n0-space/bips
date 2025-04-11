@@ -1,0 +1,112 @@
+BIP: <TBD>
+Title: Streamlined Wallet Derivation via Binary Instruction "Number"
+Author: [n0-space] <n0-space@bitcoincreds.com>
+Status: Draft
+Type: Standards Track
+Created: 2025-04-11
+License: CC-BY-SA 4.0
+
+## Abstract
+
+This document describes a mechanism by which a single large binary value ("Number") encodes a set of op-codes and parameters that instruct how mnemonic phrases, dictionary salts, and fractal/multisig derivation paths are generated. The aim is to unify multiple wallet design features—BIP-39 mnemonics, passphrase layers, BIP-32 derivation, BIP-43/44 purpose fields, and partial user-provided secrets—into a single extensible system.
+
+## Motivation
+
+* **Flexible Security Layers**: Users and developers need multi-layer seed generation (e.g., base mnemonic + passphrase + custom derivation). Current standards (BIP-32, BIP-39, BIP-85) lack a single "instruction set" that can orchestrate multi-step derivations with optional partial secrets.
+* **Vanity + Random Integration**: Some users prefer vanity mnemonics or partial user input for personalization; others want purely random generation. The proposed system supports both approaches seamlessly.
+* **Scaling to Complex Use Cases**: By treating derivation logic as op-codes, we can define fractal derivation paths, partial signers in multisig, or ephemeral child seeds from a single controlling "Number."
+
+## Specification
+
+1. **Binary "Number" Overview**
+   - Must be at least 512 bits in length (suggested range 512–2048 bits)
+   - Interpreted as a sequence of fields representing flags, parameters, or indexes
+   - Encoded in a standard format (hex, Base58/Bech32) for user backup or distribution
+
+2. **Header and Version**
+   - Bits `0–15`: version number to handle future expansions
+   - Bits `16–31`: reserved for future use or BIP-specific flags
+
+3. **Instruction/Step Flags**
+   - Define which modules are active:
+     - Dictionary shuffle (1 bit)
+     - Passphrase generation (1 bit)
+     - Fractal derivation (1 bit)
+     - Multisig composition (1 bit)
+     - Additional bits for advanced features
+   - Each flag determines whether subsequent parameter blocks are parsed
+
+4. **Dictionary Salt and Shuffle**
+   - If dictionary shuffle is enabled, read N bits to form a "salt offset" or seed
+   - Combine user-provided salt with this offset to shuffle the BIP-39 wordlist
+   - Subsequent indexes referencing this wordlist use the new order
+
+5. **Mnemonic & Passphrase Generation**
+   - If passphrase generation is enabled, parse M bits for word count (e.g., 6–12)
+   - The next M×(word-index-bit-length) bits map to word indexes in the shuffled dictionary
+   - Optionally, a flag can instruct the user to supply random or vanity mnemonics
+
+6. **Fractal or Recursive Derivation**
+   - If fractal derivation is enabled, parse D bits specifying depth of recursion
+   - For each child index, read 31 bits (for hardened BIP-32)
+   - The resulting path can be `m / index_0' / index_1' / … / index_D'`
+   - Additional sub-flags can define branching patterns
+
+7. **Multisig Configuration**
+   - If multisig is enabled, parse bits specifying:
+     - Threshold (e.g., 2-of-3, 3-of-5)
+     - Number of signers (N)
+     - Each signer's sub-derivation path or index references
+   - Optionally define partial secret requirement for each signer
+
+8. **Complete vs. Partial Derivation**
+   - A flag can indicate "complete derivation," meaning the Number + optional salt fully reconstructs the wallet
+   - Alternatively, partial derivation requires additional runtime user mnemonics
+
+9. **Data Offsets & Parsing Rules**
+   - Parse each block in sequence:
+     1. Read version
+     2. Read step flags
+     3. For each flagged module, read its parameter block
+   - If a parameter block indicates user-supplied secret, prompt at runtime
+
+## Rationale
+
+- **Unification**: This encapsulates passphrase creation, dictionary shuffling, fractal derivation, and multisig within a single structure while maintaining interoperability with BIP-32/39 principles.
+- **Backwards Compatibility**: The final derived keys remain standard BIP-32 extended keys or BIP-39 seeds. The "Number" formalizes their composition.
+- **Entropy Preservation**: With sufficient Number size (512+ bits) and proper user-added randomness, security meets or exceeds typical 128–256 bit seed standards.
+
+## Reference Implementation
+
+A minimal Python script could:
+- Parse a hex-encoded 1024-bit Number
+- Read a dictionary salt offset, shuffle a local BIP-39 wordlist
+- Generate passphrase words from partial indexes, prompt for missing words
+- Derive fractal child indexes, produce final xpub/xprv
+- Handle multisig configuration by combining multiple partial xpubs
+
+## Backwards Compatibility
+
+- Compatible with BIP-32/39/43/44-based wallets for final key derivation
+- Does not break existing mnemonic storage or passphrase usage
+- Can be layered on top of BIP-85 deterministic child seeds
+
+## Test Vectors
+
+Test vectors should demonstrate:
+- A sample "Number" with version=1, dictionary shuffle=on, passphrase=6 words, fractal depth=3
+- The resulting final passphrase, fractal path, and derived address
+- Partial derivation example with user-supplied words
+
+## Security Considerations
+
+- The "Number" must be kept private if it encodes sensitive indexes producing private keys
+- If the dictionary salt is guessable, an attacker can reorder the wordlist
+- Partial derivations require that any missing piece remain secure
+
+## Conclusion
+
+This BIP outlines a multi-module instruction layer for orchestrating advanced wallet derivation in a standardized, extensible manner. By leveraging established BIPs, this proposal enables seamless integration of vanity mnemonics, random seeds, fractal paths, and multisig configurations, all guided by binary values acting as an "instruction set."
+
+## References
+- BIP-32, BIP-39, BIP-43, BIP-44, BIP-85, BIP-174
